@@ -4,6 +4,7 @@ import android.os.Bundle;
 import android.view.View;
 import android.widget.Button;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import androidx.activity.EdgeToEdge;
 import androidx.appcompat.app.AppCompatActivity;
@@ -19,6 +20,9 @@ public class MainActivity extends AppCompatActivity {
     private String operator = "";
     private boolean isNewOperation = true;
     private boolean isDecimalAdded = false;
+
+    private static final double MAX_VALUE = Double.MAX_VALUE;
+    private static final double MIN_VALUE = -Double.MAX_VALUE;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -64,7 +68,25 @@ public class MainActivity extends AppCompatActivity {
             currentText = "";
         }
 
-        display.setText(currentText + digit);
+        String newText = currentText + digit;
+        if (isNumberTooLarge(newText)) {
+            showError("Number is too fat!");
+            return;
+        }
+
+        display.setText(newText);
+    }
+
+    private boolean isNumberTooLarge(String numberStr) {
+        try {
+            double number = Double.parseDouble(numberStr);
+            if (Double.isInfinite(number)) {
+                return true;
+            }
+            return false;
+        } catch (NumberFormatException e) {
+            return true;
+        }
     }
 
     private void onOperatorClick(View view) {
@@ -73,9 +95,16 @@ public class MainActivity extends AppCompatActivity {
 
         if (!isNewOperation && !display.getText().toString().isEmpty()) {
             if (!operator.isEmpty()) {
-                calculate();
+                if (!calculate()) {
+                    return;
+                }
             } else {
-                firstNumber = Double.parseDouble(display.getText().toString());
+                String currentText = display.getText().toString();
+                if (isNumberTooLarge(currentText)) {
+                    showError("Number is too fat!");
+                    return;
+                }
+                firstNumber = Double.parseDouble(currentText);
             }
         }
 
@@ -92,52 +121,109 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    private void calculate() {
-        if (operator.isEmpty()) return;
+    private boolean calculate() {
+        if (operator.isEmpty()) return false;
 
         String currentText = display.getText().toString();
-        if (currentText.isEmpty()) return;
+        if (currentText.isEmpty()) return false;
 
-        secondNumber = Double.parseDouble(currentText);
-        double result = 0;
+        try {
+            secondNumber = Double.parseDouble(currentText);
 
-        switch (operator) {
-            case "+":
-                result = firstNumber + secondNumber;
-                break;
-            case "−":
-                result = firstNumber - secondNumber;
-                break;
-            case "×":
-                result = firstNumber * secondNumber;
-                break;
-            case "÷":
-                if (secondNumber != 0) {
+            if (Double.isInfinite(firstNumber) || Double.isInfinite(secondNumber)) {
+                showError("Too fat!");
+                return false;
+            }
+
+            double result = 0;
+            boolean overflow = false;
+
+            switch (operator) {
+                case "+":
+                    result = firstNumber + secondNumber;
+                    overflow = Double.isInfinite(result) ||
+                            result > MAX_VALUE ||
+                            result < MIN_VALUE;
+                    break;
+
+                case "−":
+                    result = firstNumber - secondNumber;
+                    overflow = Double.isInfinite(result) ||
+                            result > MAX_VALUE ||
+                            result < MIN_VALUE;
+                    break;
+
+                case "×":
+                    result = firstNumber * secondNumber;
+                    overflow = Double.isInfinite(result) ||
+                            result > MAX_VALUE ||
+                            result < MIN_VALUE;
+                    break;
+
+                case "÷":
+                    if (secondNumber == 0) {
+                        showError("Divided by zero!");
+                        return false;
+                    }
                     result = firstNumber / secondNumber;
-                } else {
-                    display.setText("Ошибка");
-                    operator = "";
-                    firstNumber = 0;
-                    isNewOperation = true;
-                    return;
-                }
-                break;
-            case "%":
-                result = firstNumber * secondNumber / 100;
-                break;
-        }
+                    overflow = Double.isInfinite(result) ||
+                            result > MAX_VALUE ||
+                            result < MIN_VALUE;
+                    break;
 
-        String resultString = formatResult(result);
-        display.setText(resultString);
-        firstNumber = Double.parseDouble(resultString);
+                case "%":
+                    result = firstNumber * secondNumber / 100;
+                    overflow = Double.isInfinite(result) ||
+                            result > MAX_VALUE ||
+                            result < MIN_VALUE;
+                    break;
+            }
+
+            if (overflow) {
+                showError("Too fat!");
+                return false;
+            }
+
+            String resultString = formatResult(result);
+            display.setText(resultString);
+            firstNumber = Double.parseDouble(resultString);
+            return true;
+
+        } catch (NumberFormatException e) {
+            showError("Invalid format!");
+            return false;
+        }
     }
 
     private String formatResult(double number) {
+        if (Double.isNaN(number)) {
+            return "Error!";
+        }
+        if (Double.isInfinite(number)) {
+            return "Infinity!";
+        }
+
+        if (Math.abs(number) > 1e12) {
+            return String.format("%.2e", number);
+        }
+
         if (number == (long) number) {
             return String.valueOf((long) number);
         } else {
-            return String.valueOf(number);
+            String str = String.format("%.10f", number);
+            str = str.replaceAll("0*$", "").replaceAll("\\.$", "");
+            return str;
         }
+    }
+
+    private void showError(String message) {
+        Toast.makeText(this, message, Toast.LENGTH_SHORT).show();
+        display.setText("Error!");
+        firstNumber = 0;
+        secondNumber = 0;
+        operator = "";
+        isNewOperation = true;
+        isDecimalAdded = false;
     }
 
     private void onClearClick(View view) {
@@ -152,6 +238,11 @@ public class MainActivity extends AppCompatActivity {
     private void onDotClick(View view) {
         String currentText = display.getText().toString();
 
+        if (currentText.equals("Error!")) {
+            onClearClick(view);
+            currentText = "0";
+        }
+
         if (isNewOperation) {
             currentText = "0";
             isNewOperation = false;
@@ -165,10 +256,20 @@ public class MainActivity extends AppCompatActivity {
 
     private void onPlusMinusClick(View view) {
         String currentText = display.getText().toString();
-        if (!currentText.equals("0") && !currentText.isEmpty()) {
-            double number = Double.parseDouble(currentText);
-            number = -number;
-            display.setText(formatResult(number));
+        if (!currentText.equals("0") && !currentText.isEmpty() && !currentText.equals("Error!")) {
+            try {
+                double number = Double.parseDouble(currentText);
+
+                if (Double.isInfinite(-number)) {
+                    showError("Too fat!");
+                    return;
+                }
+
+                number = -number;
+                display.setText(formatResult(number));
+            } catch (NumberFormatException e) {
+                showError("Error!");
+            }
         }
     }
 }
