@@ -24,7 +24,6 @@
 
     <!-- Функции -->
     <string name="btn_clear">C</string>
-    <string name="btn_delete">⌫</string>
     <string name="btn_dot">.</string>
     <string name="btn_plus_minus">±</string>
     <string name="btn_percent">%</string>
